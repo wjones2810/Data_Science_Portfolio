@@ -1,0 +1,157 @@
+# Author: Will Jones
+# Date: 2/10/2024
+
+library(tictoc) # Load tictoc to enable timing runtime
+library(boot) # Load boot to get cv.glm
+library(glmnet) # load glmnet for cv.glmnet
+source("naref.R") # input code from naref.R
+
+tic() # Start the clock
+
+set.seed(1)
+
+# Read data
+mydat <- read.csv("bikerentals2011.csv", colClasses=c(rep('factor', 6), rep('numeric', 4))) 
+# Apply naref() to mydat
+mydat <- naref(mydat)
+# Standardize continuous regressors
+mydat[,c("temp","hum","windspeed")] <- scale(mydat[,c("temp","hum","windspeed")])
+
+# Question 2.1
+
+# Create the density histogram
+hist(log(mydat$cnt), breaks = 30, freq = F,
+     main = "Distribution of log(Hourly number of bike rentals)",
+     ylab = "Density",
+     xlab = "log(Hourly number of bike rentals)")
+# Add fitted normal density 
+mu <- mean(log(mydat$cnt))
+sig <- sd(log(mydat$cnt))
+curve(dnorm(x, mean = mu, sd = sig), col="blue", lwd=3, add=TRUE, yaxt="n")
+# Fix legends
+legend("topleft", legend=c("Density histogram", "Fitted normal density"),
+       col=c("gray","blue"), pch = c(7,NA), lty=c(NA,1), lwd = c(5,3), bty="n")
+
+
+
+# Question 2.2: fit lasso by cv, MSE plot
+# Regression formula
+myreg <- as.formula("log(cnt) ~ . + hr*weekday*season*(temp + hum + windspeed)") # define formula
+# Build design matrix of regressors
+x <- model.matrix(myreg, data = mydat)[,-1] # Remove constant
+# Target
+y <- log(mydat$cnt)
+# Fit lasso
+cv.lasso <-  cv.glmnet(x, y, alpha = 1, standardize = F, trace.it = T, nfold = 5)
+# MSE plot
+plot(cv.lasso)
+
+# Question 2.3: coefficient plot
+plot(cv.lasso$glmnet.fit, xvar = "lambda", label = T)
+
+# Question 2.4: MSE min lambda, R2
+cv.lasso
+lasso.R2 <- 1- cv.lasso$cvm[cv.lasso$index[1]]/cv.lasso$cvm[1] # Compute R2
+lasso.R2 # Print it
+
+
+# Question 2.5: fit ridge by cv, MSE plot
+# Fit ridge
+cv.ridge <-  cv.glmnet(x, y, alpha = 0, standardize = F, trace.it = T, nfold = 5)
+# MSE plot
+plot(cv.ridge)
+
+# Fit ridge, updated penalty path
+cv.ridge <-  cv.glmnet(x, y, alpha = 0, lambda.min.ratio = 6e-07, standardize = F, trace.it = T, nfold = 5)
+# MSE plot
+plot(cv.ridge)
+
+# Question 2.6: coefficient plot
+plot(cv.ridge$glmnet.fit, xvar = "lambda", label = T)
+
+# Question 2.7: MSE min lambda, R2
+cv.ridge
+ridge.R2 <- 1- cv.ridge$cvm[cv.ridge$index[1]]/cv.ridge$cvm[1] # Compute R2
+ridge.R2 # Print it
+
+
+# Question 2.8: predications
+# Read new data
+mynewdat <- read.csv("bikerentals2012.csv", colClasses=c(rep('factor', 6), rep('numeric', 4)))
+# Apply naref()
+mynewdat <- naref(mynewdat)
+# Standardize continuous regressors
+mynewdat[,c("temp","hum","windspeed")] <- scale(mynewdat[,c("temp","hum","windspeed")])
+# Build design matrix of regressors from new data
+newx <- model.matrix(myreg, data = mynewdat)[,-1] # Remove constant
+# Grab the relevant time period
+xmay12 <- newx[2847:3014,]
+
+# Lasso predictions
+lasso.pred <- predict(cv.lasso, s = cv.lasso$lambda.min, newx = xmay12)
+# Ridge predictions
+ridge.pred <- predict(cv.ridge, s = cv.ridge$lambda.min, newx = xmay12)
+# Output average number of predicted bike rentals
+tabmat <- matrix(0,2,2,dimnames = list(c("Lasso", "Ridge"),c("Mean","SD")))
+tabmat["Lasso",] = c(mean(exp(lasso.pred)),sd(exp(lasso.pred))) # Lasso predictions
+tabmat["Ridge",] = c(mean(exp(ridge.pred)),sd(exp(ridge.pred))) # Ridge predictions
+print(tabmat) # print
+
+# Question 2.9: prediction plot
+plot(1:168,mynewdat$cnt[2847:3014],type = "b", xaxt = "n", lwd = 2,
+     main = "168 hours of bike rentals starting 00:00 on Sunday, April 29th, 2012",
+     xlab = "Hours since 00:00 onv Sunday, April 29th, 2012",
+     ylab = "Number of bike rentals")
+axis(1, at = seq(from = 0, to = 167, by =12))
+lines(1:168,exp(lasso.pred),type = "b", col = "blue", lwd = 2)
+lines(1:168,exp(ridge.pred),type = "b", col = "red", lwd = 2)
+legend("topleft", legend=c("New data", "Lasso", "Ridge"),
+       col=c("black","blue","red"), pch = c(1,1,1), lty=c(1,1,1), 
+       lwd = c(2,2,2), bty="n")
+
+
+# Question 2.10: weekday coefficient plot 
+# The target coefficients
+my.coef <- list("weekday0", "weekday1", "weekday2", "weekday3", "weekday4", "weekday5", "weekday6")
+coefnames <- names(cv.lasso$glmnet.fit$beta[,1]) # Coefficient names
+# Grab the index of the target coefficients
+my.coef.indx <- c()
+for (this.coef in my.coef) {
+  my.coef.indx <- c(my.coef.indx,which(coefnames == this.coef))
+}
+# Print the target coefficient est
+cv.lasso$glmnet.fit$beta[my.coef.indx,cv.lasso$index["min",1]]
+
+# Question 2.11: parametrc bootstrap the 95% CI for lasso, Taddy (2019, p 99)
+# Re-fit with low penalty weight
+lowpen.lasso <-  glmnet(x, y, alpha = 1, standardize = F, lambda = cv.lasso$lambda.min/4)
+# Conditional means, low penalty
+lowpen.logcnt <- predict(lowpen.lasso, x)
+# Estimate error variance
+lowpen.sigma <- sqrt(mean((y - lowpen.logcnt)^2))
+# Do the bootstrap
+betab <-c()
+B <- 100
+for (b in 1:B) {
+  # Draw boostrap sample from low penalty model
+  yb <- rnorm(dim(x)[1], mean = lowpen.logcnt, sd = lowpen.sigma)
+  # Lasso on the bootstrap sample
+  lassob <- cv.glmnet(x, yb, alpha = 1, standardize = F, nfold = 5)
+  # Store boostrap sample estimate
+  betab <- cbind(betab, coef(lassob))
+  cat(b, " ") # print progress
+}
+
+# Compute 95% CI
+qtiles <- quantile(betab["weekday6",]-coef(cv.lasso)["weekday6",], c(0.025,0.975))
+ci <-coef(cv.lasso)["weekday6",] - qtiles[2:1]
+names(ci) <- names(ci)[2:1] # Fix labels
+ci # Print it
+
+# Alternative CI computation, exactly as in Taddy (2019)
+qtiles <- quantile(betab["weekday6",], c(0.025,0.975)) 
+ci <- 2*coef(cv.lasso)["weekday6",] - qtiles[2:1]
+names(ci) <- names(ci)[2:1] # Fix labels
+ci # Print it
+
+toc() # Run-time: 20 min on my laptop (B = 100, line 135), reduce B to get a faster run
