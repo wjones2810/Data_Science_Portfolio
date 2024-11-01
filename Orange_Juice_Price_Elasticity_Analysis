@@ -1,0 +1,71 @@
+# R-script
+# Author: Will Jones
+# Date: 14/09/2023
+# Read data
+oj <- read.csv("oj.csv", stringsAsFactors = T)
+# Question 1
+reg0 <- glm(log(sales) ~ log(price)*brand, data=oj)
+summary(reg0)
+b0 <- coef(reg0) # Grab the coef estimates and store in b0 for easy reference
+# names(b0) # Print coef names to be used in elasticity formulas below
+# dominicks price elas
+pelas.dominicks <- b0["log(price)"] 
+# minute maid price elas
+pelas.minute.maid <- b0["log(price)"] + b0["log(price):brandminute.maid"]
+# tropicana price elas
+pelas.tropicana <- b0["log(price)"] + b0["log(price):brandtropicana"] 
+# use c()-function to concatenate in vector w/ 3 entries
+pelas0 <- c(pelas.dominicks,pelas.minute.maid,pelas.tropicana) 
+names(pelas0) <- c("dominicks","minute.maid","tropicana") # name the entries in the vector
+pelas0 # Print
+# Question 3
+# Three-way interaction model
+reg3 <- glm(log(sales) ~ log(price)*brand*feat, data=oj)
+summary(reg3) # Summarize fitted regression
+b3 <- coef(reg3) # Grab the coef estimates and store in b0 for easy reference
+# names(b3) # Print coef names to be used in elasticity formulas below
+# price elas: dominicks, not featured
+pelas.dominicks <- b3["log(price)"] 
+# price elas: minute maid, not featured
+pelas.minute.maid <- b3["log(price)"] + b3["log(price):brandminute.maid"]
+# price elas: tropicana, not featured
+pelas.tropicana <- b3["log(price)"] + b3["log(price):brandtropicana"]
+# price elas: dominicks, featured
+pelas.dominicks.feat <- b3["log(price)"] + b3["log(price):feat"] 
+# price elas: minute maid, featured
+pelas.minute.maid.feat <- b3["log(price)"] +
+  b3["log(price):feat"] + 
+  b3["log(price):brandminute.maid"] + 
+  b3["log(price):brandminute.maid:feat"]
+# price elas: trpoicana, featured
+pelas.tropicana.feat <- b3["log(price)"] + 
+  b3["log(price):feat"] + 
+  b3["log(price):brandtropicana"] + 
+  b3["log(price):brandtropicana:feat"]
+pelas3 <- matrix(0,2,3) # use matrix()-function to get 2x3 matrix of 0s 
+colnames(pelas3) <- c("dominicks","minute.maid","tropicana") # name matrix cols
+rownames(pelas3) <- c("not featured","featured") # name matrix rows
+# Fill matrix with computed elasticities
+pelas3[1,] <- c(pelas.dominicks, pelas.minute.maid, pelas.tropicana) # row 1 
+pelas3[2,] <- c(pelas.dominicks.feat, pelas.minute.maid.feat, pelas.tropicana.feat) # row 2
+pelas3 # print
+# Question 4
+# R2 for basic model (no advertisement effects)
+R2.reg0 <- 1 - reg0$deviance/reg0$null.deviance
+# R2 for 3-way interaction model (with advertisement effects)
+R2.reg3 <- 1 - reg3$deviance/reg3$null.deviance
+# Collate in vector
+R2 <- c(R2.reg0, R2.reg3)
+# Label entries so it prints nicely
+names(R2) <- c("no feat effects", "feat effects")
+R2 # print
+# Question 5
+# Create data frame with oos predictors
+oosdata <- data.frame(brand = "dominicks", price = 4, feat = 1)
+# Make oos predictions 
+oospred.reg0 <- predict(reg0, newdata= oosdata) # model 0
+oospred.reg3 <- predict(reg3, newdata = oosdata) # model 3
+# Stack oos predictions in vector
+oospred <- c(oospred.reg0,oospred.reg3)
+names(oospred) <- c("no feat effects", "feat effects") # Name entries
+exp(oospred) # Print (recall we model logsales, so exp() to get sales)
