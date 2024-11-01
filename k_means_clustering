@@ -1,0 +1,172 @@
+# Author: Will Jones
+# Date: 21/10/2024
+
+library(tictoc) # Load tictoc to enable timing runtime
+library(MASS) # To draw in multivariate normal
+
+tic() # start clock!
+
+# Create a sequence of 100 equally spaced numbers between -5 and 5
+x <- seq(-5, 5, length=500)
+# Create a vector of densities 
+y1 <- dnorm(x, mean = -2, sd = 1)
+# Plot
+plot(x,y1, type = "l", lwd = 4, col = "#ea5545", xlab = "x", ylab = "PDF", ylim = c(0,0.5)) 
+abline(v = -2, lwd = 4, lty = 2, col = "#ea5545")
+text(-2,0.55,expression(mu[1]==-2), xpd = NA)
+
+# Create a vector of densities 
+y2 <- dnorm(x, mean = 2 , sd = 1)
+# Plot
+plot(x,y1, type = "l", lwd = 1, col = "#ea5545", xlab = "x", ylab = "PDF", ylim = c(0,0.5)) 
+abline(v = -2, lwd = 1, lty = 2, col = "#ea5545")
+text(-2,0.55,expression(mu[1]==-2), xpd = NA)
+lines(x,y2, lwd = 4, col = "#27aeef")
+abline(v = 2, lwd = 4, lty = 2, col = "#27aeef")
+text(2,0.55,expression(mu[2]==2), xpd = NA)
+
+# Create a vector of densities 
+y <- 0.3*y1 + 0.7*y2
+# Plot
+plot(x,y1, type = "l", lwd = 1, col = "#ea5545", xlab = "x", ylab = "PDF", ylim = c(0,0.5)) 
+lines(x,y2, lwd = 1, col = "#27aeef")
+lines(x,y, lwd = 4, col = "black")
+abline(v = -2, lwd = 1, lty = 2, col = "#ea5545")
+text(-2,0.55,expression(mu[1]==-2), xpd = NA)
+abline(v = 2, lwd = 1, lty = 2, col = "#27aeef")
+text(2,0.55,expression(mu[2]==2), xpd = NA)
+abline(v = 0.3*(-2)+0.7*2, lwd = 4, lty = 2, col = "black")
+text(0.3*(-2)+0.7*2,0.55,expression(mu==0.8), xpd = NA)
+
+
+# K-means algorithm
+
+# True clusters
+
+set.seed(1)
+mu1 <- c(-2,-2)
+Sig <- matrix(c(1,0,0,1), nrow=2, ncol=2, byrow=T)
+z1 <- mvrnorm(n = 200, mu1, Sig)
+mu2 <- c(-2,2)
+z2 <- mvrnorm(n = 300, mu2, Sig)
+mu3 <- c(0,0)
+z3 <- mvrnorm(n = 500, mu3, Sig)
+x <- data.frame(x1 = c(z1[,1],z2[,1],z3[,1]), x2 = c(z1[,2],z2[,2],z3[,2]))
+par(mfrow=c(1,2))
+# Scatter labeled data
+plot(z1, col = "#ea5545", xlim = c(-5,5), ylim = c(-5,5), xlab = "x1", ylab = "x2", main = "Labeled data")
+points(mu1[1],mu1[2],pch = 21,bg = "#ea5545",cex = 3)
+points(z2, col = "#27aeef", xlab = "x1", ylab = "x2")
+points(mu2[1],mu2[2],pch = 21,bg = "#27aeef",cex = 3)
+points(z3, col = "gold", xlab = "x1", ylab = "x2")
+points(mu3[1],mu3[2],pch = 21,bg = "gold",cex = 3)
+# Scatter unlabeled data
+plot(x, xlim = c(-5,5), ylim = c(-5,5), xlab = "x1", ylab = "x2", main = "Unlabeled data")
+points(0.2*mu1[1]+0.3*mu2[1]+0.5*mu3[1],0.2*mu1[2]+0.3*mu2[2]+0.5*mu3[1],pch = 21,bg = "black",cex = 3)
+
+# Randomly assign clusters
+x$clid <- sample(1:3,nrow(x), replace = T)
+# Get cluster centers = mean vector conditional on cluster assignment
+newmu <- aggregate(. ~ clid, data = x, FUN = mean)
+# Scatter unlabeled data
+plot(x$x1,x$x2, xlim = c(-5,5), ylim = c(-5,5), xlab = "x1", ylab = "x2", main = "Unlabeled data")
+
+
+clucol <- c("#ea5545","#27aeef","gold")
+
+keepgoing <- T
+# i <- 1
+while(keepgoing) {
+  # i <- i+1
+  # print(i)
+  newmu <- aggregate(. ~ clid, data = x, FUN = mean) # Compute centroids
+  # Assign cluster
+  dist = matrix(0,nrow(x),3)
+  dist[,1] <- (x$x1 - newmu$x1[1])^2 + (x$x2 - newmu$x2[1])^2
+  dist[,2] <- (x$x1 - newmu$x1[2])^2 + (x$x2 - newmu$x2[2])^2
+  dist[,3] <- (x$x1 - newmu$x1[3])^2 + (x$x2 - newmu$x2[3])^2
+  mindist <- apply(dist, 1, FUN = min)
+  newclid <- (dist[,1] == mindist)*1 + (dist[,2] == mindist)*2 + (dist[,3] == mindist)*3
+  if(sum(x$clid != newclid) == 0) {
+    keepgoing <- F
+  }
+  x$clid <- newclid
+}
+
+par(mfrow = c(1,3))
+plot(z1, col = "#ea5545", xlim = c(-5,5), ylim = c(-5,5), xlab = "x1", ylab = "x2", main = "True labels")
+points(z2, col = "#27aeef", xlab = "x1", ylab = "x2")
+points(z3, col = "gold", xlab = "x1", ylab = "x2")
+
+plot(z1, xlim = c(-5,5), ylim = c(-5,5), xlab = "x1", ylab = "x2", main = "Unlabeled")
+points(z2, xlab = "x1", ylab = "x2")
+points(z3, xlab = "x1", ylab = "x2")
+
+# Scatter labeled data, iteration 0, post cluster assignment
+plot(x$x1,x$x2, col = clucol[x$clid], xlim = c(-5,5), ylim = c(-5,5), xlab = "x1", ylab = "x2", main = "K-means clusters")
+dev.off()
+
+# K-means by kmeans()
+
+xmat <- as.matrix(x[,c("x1","x2")]) # Put data in numeric matrix
+Kmeans3 <- kmeans(xmat,  centers=3, nstart=10) # K-means w/ 3 centers, 10 re-starts
+Kmeans3$centers # Print 3 centers
+Kmeans3$size # Print size of clusters
+Kmeans3$withinss # Print within-cluster sum of squares
+# Decompose total SS in within/between
+c(Kmeans3$totss,Kmeans3$tot.withinss, Kmeans3$betweenss) 
+
+# Protein consumption in Europe
+
+# European Protein Consumption, in grams/person-day 
+food <- read.csv("protein.csv", row.names=1) # 1st column is country name
+head(food)
+
+# scale the data
+xfood <- scale(food) 
+apply(xfood,2,sd)
+
+# K-means with K = 3 using only red meat and fruit/veg
+set.seed(1) # Good idea to set seed for reproducibility
+Kmeans3 <- kmeans(xfood[,c("RedMeat","Fr.Veg")],  centers=3, nstart=10)
+Kmeans3$centers # Print 3 centers
+# Decompose total SS in within/between
+share.bw <- Kmeans3$betweenss/Kmeans3$totss
+SS <- c(Kmeans3$totss,Kmeans3$tot.withinss, Kmeans3$betweenss, share.bw)
+names(SS) <- c("Total-SS","Within-SS","B/w-SS","B/w-SS/total-SS") # Nice labels
+print(SS) # Output
+
+# Plot red meat against fruit and veg
+plot(xfood[,"RedMeat"], xfood[,"Fr.Veg"], xlim=c(-2,2.75), type="n", xlab="Red Meat", ylab="Fruit and vegetables")
+text(xfood[,"RedMeat"], xfood[,"Fr.Veg"], labels=rownames(food), col=clucol[Kmeans3$cluster])
+
+# K-means with K = 3 using all 9 protein types
+set.seed(1) # Good idea to set seed for reproducibility
+Kmeans3 <- kmeans(xfood,  centers=3, nstart=10)
+Kmeans3$centers # Print 3 centers
+# Decompose total SS in within/between
+share.bw <- Kmeans3$betweenss/Kmeans3$totss
+SS <- c(Kmeans3$totss,Kmeans3$tot.withinss, Kmeans3$betweenss, share.bw)
+names(SS) <- c("Total-SS","Within-SS","B/w-SS","B/w-SS/total-SS") # Nice labels
+print(SS) # Output
+
+# Plot red meat against fruit and veg
+plot(xfood[,"RedMeat"], xfood[,"Fr.Veg"], xlim=c(-2,2.75), type="n", xlab="Red Meat", ylab="Fruit and vegetables")
+text(xfood[,"RedMeat"], xfood[,"Fr.Veg"], labels=rownames(food), col=clucol[Kmeans3$cluster])
+
+# K-means with K = 7 using all 9 protein types
+set.seed(1) # Good idea to set seed for reproducibility
+Kmeans7 <- kmeans(xfood,  centers=7, nstart=10)
+# Decompose total SS in within/between
+share.bw <- Kmeans7$betweenss/Kmeans7$totss
+SS <- c(Kmeans7$totss,Kmeans7$tot.withinss, Kmeans7$betweenss, share.bw)
+names(SS) <- c("Total-SS","Within-SS","B/w-SS","B/w-SS/total-SS") # Nice labels
+print(SS) # Output
+
+# Plot red meat against fruit and veg
+clucol7 <- c("#f94144","#f3722c","#f8961e","#f9c74f","#90be6d","#43aa8b","#577590")
+plot(xfood[,"RedMeat"], xfood[,"Fr.Veg"], xlim=c(-2,2.75), type="n", xlab="Red Meat", ylab="Fruit and vegetables")
+text(xfood[,"RedMeat"], xfood[,"Fr.Veg"], labels=rownames(food), col=clucol7[Kmeans7$cluster])
+
+toc() # Stop clock! Runtime is < 1 sec on my laptop
+
