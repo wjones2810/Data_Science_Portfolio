@@ -1,0 +1,62 @@
+# R-script tutorial 2
+# Author: Will Jones
+# Date: 30/09/2024
+
+library(tictoc) # Load tictoc to record run time
+library(boot) # Load boot to get cv.glm
+set.seed(1)
+
+tic() # Start clock
+
+# Read data
+bbd <- read.csv("bigbikedat.csv", colClasses=c(rep('factor', 6), rep('numeric', 4), 'character')) 
+
+# Number of regressors in log(cnt) ~. + hr*weekday*season*(temp + hum + windspeed)
+big <- as.formula("log(cnt) ~ . + hr*weekday*season*(temp + hum + windspeed)") # define formula
+dim(model.matrix(big,data= bbd[,-11]))[2] # Nbr of cols in design matrix 
+
+# Fit big model (run time: 80 sec)
+fit.big <- glm(big, data = bbd[,-11])
+# Cross validate oos mse (run time: 320 sec)
+cv.big <- cv.glm(bbd[,-11],fit.big, K = 5)
+# is- and oos-mse 
+mse.big.is <- fit.big$deviance/dim(bbd)[1]
+mse.big.oos <- cv.big$delta[1]
+# Report the mse
+out <- c(mse.big.is,mse.big.oos)
+names(out) <- c("is-mse","oos-mse")
+out
+
+# BH FDR control function
+BHcutoff <- function(a,p) {
+  p <- sort(p)
+  x <- a*seq(from = 1, to = length(p), by = 1)/length(p)
+  return(as.numeric(p[max(which(p <= x))]))
+}
+
+# Cut model
+# Get p-values for big model
+pvals <- summary(fit.big)$coef[-1,4] #-1 to drop the intercept
+cutoff <- BHcutoff(0.10,pvals)
+cutoff
+
+# Select the regressors for the cut model
+cutregs <- which(pvals <= cutoff) # reg's that make the cut
+mm <- model.matrix(big, data = bbd[,-11]) # big model design matrix 
+mm <- mm[,-1] # get rid of intercept
+cutdata <- data.frame(bbd$cnt,mm[,cutregs]) # put cnt and mm in data frame
+names(cutdata)[1] <- "cnt" # give cnt-variable the right name
+
+# Fit cut model 
+fit.cut <- glm(log(cnt) ~  ., data = cutdata)
+# Cross validate oos mse
+cv.cut <- cv.glm(cutdata,fit.cut, K = 5)
+# is- and oos-mse 
+mse.cut.is <- fit.cut$deviance/dim(bbd)[1]
+mse.cut.oos <- cv.cut$delta[1]
+# Report the mse
+out <- c(mse.cut.is,mse.cut.oos)
+names(out) <- c("is-mse","oos-mse")
+out
+
+toc() # Run-time about 75 sec on my laptop
