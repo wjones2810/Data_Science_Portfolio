@@ -12,4 +12,4 @@ Welcome to my portfolio of data science projects. This collection showcases a va
 - **Tree-Based Models**: Use of decision trees and ensembles for classification and regression tasks.
 - **Matrix Factorization**: Dimensionality reduction techniques applied to complex datasets.
 
-Each project folder contains a README with detailed explanations of objectives, methodologies, and findings. I hope this portfolio demonstrates my proficiency in data science, particularly in econometrics, predictive modeling, and clustering.
+Each project folder contains a README with detailed explanations of objectives, methodologies, and findings. 
