@@ -1,0 +1,184 @@
+# Author: Will Jones
+# Date: 21/10/2024
+
+library(tictoc) # Load tictoc lib
+library(tree) # load tree package
+library(ranger) # load random forest package
+tic()
+
+### Trees, forests ... ###
+
+# Generating the data for rfexample
+longx <- seq(from = -20, to = 20, by = 0.01)
+x <- seq(from = -20, to = 20, by = 0.5)
+f <- function(x) {
+  return(1/(x^2+1))
+}
+set.seed(1)
+y <- f(x) + rnorm(length(x), mean = 0, sd = 0.1*(abs(x)-19)^2/400)
+       
+plot(x,y)
+lines(longx,f(longx), lwd = 2, col = "black", lty = 2)
+legend("topleft", bty="n", lwd=c(2), lty = c(2), col=c("black"), legend=c("True E(Y|X)"))
+
+dat <- data.frame(y,x)
+write.csv(dat, "rfexample.csv", row.names=FALSE)
+
+# Read data
+dat <- read.csv("rfexample.csv")
+
+# Scatter plot
+plot(dat$x,dat$y, xlab = "x", ylab = "y")
+
+
+
+# Polynomial regression       
+pol <- glm(y ~ poly(x, 10, raw = T), data = dat)
+
+# Scatter plot with superimposed fitted pol reg fct
+plot(dat$x,dat$y, xlab = "x", ylab = "y")
+lines(dat$x,pol$fitted.values, col = "#27aeef",lwd = 5)
+legend("topleft", bty="n", lwd=c(5), lty = c(1), col=c("#27aeef"), legend=c("Polynomial model (order 10)"))
+
+# Individual tree
+mytree <- tree(y ~ x, data = dat, mindev = 0.001)
+plot(mytree)
+text(mytree)
+
+mytree <- tree(y ~ x, data = dat, mindev = 0) # Preferred tree is grown deep
+yhat.mytree <- predict(mytree, newdata = dat) # Predictions for the tree
+
+# Scatter plot with superimposed fitted pol reg + tree
+plot(dat$x,dat$y, xlab = "x", ylab = "y")
+lines(dat$x,pol$fitted.values, col = "#27aeef",lwd = 5)
+lines(dat$x,yhat.mytree, col = "gold",lwd = 5)
+legend("topleft", bty="n", lwd=c(5,5), lty = c(1,1), col=c("#27aeef","gold"), 
+       legend=c("Polynomial model (order 10)","Individual tree (mindev = 0.001)"))
+
+# Random forest
+set.seed(1) # Set seed to make forest reproducible
+myrf <- ranger(y ~ x, data = dat, max.depth = 0, num.trees = 100)
+yhat.myrf.all <- predict(myrf, data = dat, predict.all = T) # Predict individual trees in the forest
+
+# Scatter plot with fitted pol reg + tree + indiv trees from rf
+plot(dat$x,dat$y, xlab = "x", ylab = "y")
+lines(dat$x,pol$fitted.values, col = "#27aeef",lwd = 5)
+lines(dat$x,yhat.mytree, col = "gold",lwd = 5)
+matlines(replicate(100,dat$x),yhat.myrf.all$predictions,col = "gold",lwd = 0.5,lty=1)
+points(dat$x,dat$y)
+legend("topleft", bty="n", lwd=c(5,5,0.5), lty = c(1,1,1), col=c("#27aeef","gold","gold"), 
+       legend=c("Polynomial model (order 10)","Individual tree (mindev = 0.001)", 
+                "Individual deep trees from RF"))
+
+yhat.myrf <- predict(myrf, data = dat, predict.all = F) # Random forest prediction (= average)
+
+# Scatter plot with fitted pol reg + tree + indiv trees from rf + rf
+plot(dat$x,dat$y, xlab = "x", ylab = "y")
+lines(dat$x,pol$fitted.values, col = "#27aeef",lwd = 5)
+lines(dat$x,yhat.mytree, col = "gold",lwd = 5)
+matlines(replicate(100,dat$x),yhat.myrf.all$predictions,col = "gold",lwd = 0.5,lty=1)
+lines(dat$x,yhat.myrf$predictions, col = "#ea5545",lwd = 5)
+points(dat$x,dat$y)
+legend("topleft", bty="n", lwd=c(5,5,0.5,5), lty = c(1,1,1,1), col=c("#27aeef","gold","gold","#ea5545"), 
+       legend=c("Polynomial model (order 10)","Individual tree (mindev = 0.001)", 
+                "Individual deep trees from RF","Random forest"))
+
+
+# Scatter plot with fitted pol reg + tree + indiv trees from rf + rf + true E(y|x)
+plot(dat$x,dat$y, xlab = "x", ylab = "y")
+lines(dat$x,pol$fitted.values, col = "#27aeef",lwd = 5)
+lines(dat$x,yhat.mytree, col = "gold",lwd = 5)
+matlines(replicate(100,dat$x),yhat.myrf.all$predictions,col = "gold",lwd = 0.5,lty=1)
+lines(dat$x,yhat.myrf$predictions, col = "#ea5545",lwd = 5)
+lines(longx,f(longx), col = "black",lwd = 2, lty = 2)
+points(dat$x,dat$y)
+legend("topleft", bty="n", lwd=c(5,5,0.5,5,2), lty = c(1,1,1,1,2), 
+       col=c("#27aeef","gold","gold","#ea5545","black"), 
+       legend=c("Polynomial model (order 10)","Individual tree (mindev = 0.001)", 
+                "Individual deep trees from RF","Random forest",
+                "True E(y|x)"))
+
+
+### K-means ###
+
+library(leaflet)  # Load leaflet lib
+library(lubridate)  # Load lubridate lib
+
+# Read data
+uber.apr <- read.csv("uber-raw-data-apr14.csv")
+uber.may <- read.csv("uber-raw-data-may14.csv")
+uber.jun <- read.csv("uber-raw-data-jun14.csv")
+uber.jul <- read.csv("uber-raw-data-jul14.csv")
+uber.aug <- read.csv("uber-raw-data-aug14.csv")
+uber.sep <- read.csv("uber-raw-data-sep14.csv")
+uber <- rbind(uber.apr,uber.may,uber.jun,uber.jul,uber.aug,uber.sep)
+
+# Parse Date.Time column
+uber$Date.Time <- mdy_hms(uber$Date.Time) # Give lubridate format of uber$Date.Time 
+uber$Year <- factor(year(uber$Date.Time)) # Parse out year information (as factor)
+uber$Month <- factor(month(uber$Date.Time)) # Parse out month information (as factor)
+uber$Day <- factor(day(uber$Date.Time)) # Parse out day information (as factor)
+uber$Weekday <- factor(wday(uber$Date.Time)) # Parse out weekday information (as factor)
+uber$Hour <- hour(uber$Date.Time) # Parse out hour information (as factor)
+uber$Minute <- factor(minute(uber$Date.Time)) # Parse out minute information (as factor)
+uber$Second <- factor(second(uber$Date.Time)) # Parse out second information (as factor)
+
+# Check levels
+levels(uber$Weekday) 
+levels(uber$Hour)
+
+# K-means
+
+set.seed(1) # Fix seed for reproducibility (recall kmeans randomize in initial iter)
+
+cl <- kmeans(uber[,c("Lat","Lon")], 5, nstart = 10) # K-means with K = 5
+
+cl$size # Cluster sizes
+cl$betweenss/cl$totss # Share of total SS accounted for by clusters
+cl$centers # Print centers 
+
+map <- leaflet()
+map <- addTiles(map)
+map <- addMarkers(map, lng=cl$centers[,2], lat=cl$centers[,1])
+map
+
+# Bubble chart by symbols()
+symbols(cl$centers[,2], cl$centers[,1], circles=cl$size, 
+        xlab = "Longitude in decimal degrees", 
+        ylab = "Latitude in decimal degrees",
+        main = "K-means, K = 5")
+
+set.seed(1) # Fix seed for reproducibility (recall kmeans randomize in initial iter)
+
+cl2 <- kmeans(uber[,c("Lat","Lon")], 2, nstart = 10) # K-means with K = 2
+
+map <- leaflet()
+map <- addTiles(map)
+map <- addMarkers(map, lng=cl2$centers[,2], lat=cl2$centers[,1])
+map
+
+# Bubble chart by symbols()
+symbols(cl2$centers[,2], cl2$centers[,1], circles=cl2$size, 
+        xlab = "Longitude in decimal degrees", 
+        ylab = "Latitude in decimal degrees",
+        main = "K-means, K = 2")
+
+
+
+set.seed(1) # Fix seed for reproducibility (recall kmeans randomize in initial iter)
+
+cl10 <- kmeans(uber[,c("Lat","Lon")], 10, nstart = 10) # K-means with K = 10
+
+map <- leaflet()
+map <- addTiles(map)
+map <- addMarkers(map, lng=cl10$centers[,2], lat=cl10$centers[,1])
+map
+
+# Bubble chart by symbols()
+symbols(cl10$centers[,2], cl10$centers[,1], circles=cl10$size, 
+        xlab = "Longitude in decimal degrees", 
+        ylab = "Latitude in decimal degrees",
+        main = "K-means, K = 10")
+
+toc() # Run-time is about 125 sec on my laptop
+
