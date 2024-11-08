@@ -13,3 +13,5 @@ Welcome to my portfolio of data science projects. This collection showcases a va
 - **Matrix Factorization**: Dimensionality reduction techniques applied to complex datasets.
 
 Each project folder contains a README with detailed explanations of objectives, methodologies, and findings. 
+
+Loving the stuff WJ from FB ;)
