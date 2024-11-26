@@ -1,0 +1,160 @@
+# R-script 
+# Author: Will Jones
+# Date: 6/11/2024
+
+library(tictoc) 
+library(boot)
+library(glmnet)
+source("naref.R") # input code from naref.R
+
+tic() # Start the clock
+
+# Read data
+hp <- read.csv("AmesHousePrices.csv", stringsAsFactors = T)
+# Pick out numerical features
+x <- hp[sapply(hp,is.numeric)]
+drop <- c("price","MS.SubClass","Overall.Qual","Overall.Cond",
+          "BsmtFin.SF.2","Bsmt.Full.Bath","Bsmt.Half.Bath",
+          "Full.Bath", "Half.Bath", "Mo.Sold", "Yr.Sold")
+x = x[,!(names(x) %in% drop)]
+
+# Density histogram 
+hist(log(hp$price), freq = F, xlab = "Log(price)", breaks = 30, main = "Log house price density")
+muhat <- mean(log(hp$price)) # Fit the mean
+sdhat <- sd(log(hp$price)) # Fit the SD
+# Add normal density
+curve(dnorm(x, mean = muhat, sd = sdhat), col = "#ea5545", lwd=2, add = T) 
+# Add a legend
+legend("topright", bty="n", lwd=2, lty = 1, col="#ea5545", legend= "Fitted Normal density")
+
+# PCA
+pca <- prcomp(x, scale = T)
+# Summarize to get variance of components
+summary(pca)
+
+# Scree
+plot(pca, main="Scree plot of variance of PCs")
+mtext(side=1, "PCs",  line=1, font=2)
+
+# Interpret the first 3 PCs
+round(pca$rotation[,1:3],2)
+
+# Small house indicator
+smallhouse <- (x$area < median(x$area)) + 1 
+
+
+# Calculate pc directions
+Z <- predict(pca, newdata = x)
+colcode = c("#ea5545","#27aeef")
+# Big houses vs small houses
+# PC1 and PC2
+plot(Z[smallhouse == 1,1:2],col = colcode[smallhouse[smallhouse == 1]], # small houses
+     xlab = "PC1: Smallness", ylab = "PC2: Top-heaviness")
+points(Z[smallhouse == 2,1:2],col = colcode[smallhouse[smallhouse == 2]])
+legend("topleft", bty="y", , pch=c(1,1),
+       col=c("#ea5545","#27aeef"), legend= c("Big house", "Small house"))
+
+
+# Fit linear model, all features, no interactions
+ols1 <- glm(log(price) ~ ., data = hp)
+ols1.isdev <- ols1$deviance/nrow(hp) # In-sample deviance
+# Estimate out-of-sample deviance by K-fold CV
+set.seed(1)
+cvols1 <- cv.glm(ols1, data = hp, K = 10)
+ols1.oosdev <- cvols1$delta[1] # Out-of-sample deviance
+# Output table
+tabmat <- matrix(0,1,2)
+rownames(tabmat) <- "Mean squared error, Q5"
+colnames(tabmat) <- c("in-sample","out-of-sample")
+tabmat["Mean squared error, Q5", "in-sample"] <- ols1.isdev
+tabmat["Mean squared error, Q5", "out-of-sample"] <- ols1.oosdev
+print(tabmat)
+
+
+
+# Linear model, all features, interactions with neighborhood factor
+
+# how many regressors?
+dim(model.matrix(log(price) ~  Neighborhood*., data = hp))
+
+
+ols2 <- glm(log(price) ~  Neighborhood*., data = hp) 
+ols2.isdev <- ols2$deviance/nrow(hp) # In-sample deviance
+set.seed(1)
+cvols2 <- cv.glm(ols2, data = hp, K = 10)
+ols2.oosdev <- cvols2$delta[1] # Out-of-sample deviance
+# Output table
+tabmat <- matrix(0,2,2)
+rownames(tabmat) <- c("Mean squared error, Q5","Mean squared error, Q6")
+colnames(tabmat) <- c("in-sample","out-of-sample")
+tabmat["Mean squared error, Q5", "in-sample"] <- ols1.isdev
+tabmat["Mean squared error, Q5", "out-of-sample"] <- ols1.oosdev
+tabmat["Mean squared error, Q6", "in-sample"] <- ols2.isdev
+tabmat["Mean squared error, Q6", "out-of-sample"] <- ols2.oosdev
+print(tabmat)
+
+
+# Create feature matrix for lasso
+drop <- c("price")
+feat <- hp[,!(names(hp) %in% drop)]
+feat <- naref(feat)
+xmat <-  model.matrix( ~ Neighborhood*., data=feat)
+
+# Lasso, all features, interactions with neighborhood factor
+set.seed(1)
+lasso1 <- cv.glmnet(xmat, log(hp$price), alpha = 1, nfold = 10) 
+print(lasso1) 
+
+
+# Add PCs to hp
+hpPC <- data.frame(hp,as.data.frame(Z[,1:ncol(Z)-1]))
+
+# PCR, all PCs, no additional features, no interactions
+pcr1 <- glm(log(price) ~ PC1 + PC2 + PC3 + PC4 + PC5 
+              + PC6 + PC7 + PC8 + PC9 + PC10 
+              + PC11 + PC12 + PC13 + PC14 + PC15 + 
+              + PC16 + PC17 + PC18 + PC19 + PC20 +
+              + PC21 + PC22 + PC23 + PC24 + PC25, data = hpPC) 
+pcr1.isdev <- pcr1$deviance/nrow(hp) # In-sample deviance
+set.seed(1)
+cvpcr1 <- cv.glm(pcr1, data = hpPC, K = 10)
+pcr1.oosdev <- cvpcr1$delta[1] # Out-of-sample deviance
+# Output table
+tabmat <- matrix(0,3,2)
+rownames(tabmat) <- c("Mean squared error, Q5","Mean squared error, Q6","Mean squared error, Q9")
+colnames(tabmat) <- c("in-sample","out-of-sample")
+tabmat["Mean squared error, Q5", "in-sample"] <- ols1.isdev
+tabmat["Mean squared error, Q5", "out-of-sample"] <- ols1.oosdev
+tabmat["Mean squared error, Q6", "in-sample"] <- ols2.isdev
+tabmat["Mean squared error, Q6", "out-of-sample"] <- ols2.oosdev
+tabmat["Mean squared error, Q9", "in-sample"] <- pcr1.isdev
+tabmat["Mean squared error, Q9", "out-of-sample"] <- pcr1.oosdev
+print(tabmat)
+
+
+# Add PCs to model matrix for PCR lasso
+xmat2 <- cbind(xmat,Z[,1:ncol(Z)-1])
+
+
+# Lasso, PCs + nonfactorized regressors + interactions
+set.seed(1)
+lasso2 <- cv.glmnet(xmat2, log(hp$price), alpha = 1, nfold = 10) 
+print(lasso2) 
+
+# Output table
+tabmat <- matrix(0,2,1)
+rownames(tabmat) <- c("Mean squared error, Q7","Mean squared error, Q10")
+colnames(tabmat) <- c("out-of-sample MSE")
+tabmat["Mean squared error, Q7", "out-of-sample MSE"] <- lasso1$cvm[lasso1$index["min",]]
+tabmat["Mean squared error, Q10", "out-of-sample MSE"] <- lasso2$cvm[lasso2$index["min",]]
+print(tabmat)
+
+# Plot coefficient path 
+plot(lasso2$glmnet.fit, xvar = "lambda", label = T, col = "gray") # Plot coefficient path
+# Highlight the path for PC1
+lines(log(lasso2$glmnet.fit$lambda), lasso2$glmnet.fit$beta["PC1",], type="l", lty = 1, lwd = 4)
+legend("bottomright", bty="n", lwd=c(4,2), lty = c(1,1), col=c("black","gray"), legend=c("Coefficient on PC1","All other coefficients"))
+
+toc() # Run-time: 5 sec on my laptop
+
+
